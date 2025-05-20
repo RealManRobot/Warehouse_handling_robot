@@ -1,0 +1,12 @@
+# Define the goal
+int32 number_of_shots  # 一共打几枪
+
+---
+# Define the result
+uint8 SUCCESS = 0
+uint8 FAILURE = 10
+uint8 CANCELED = 11
+uint8 res
+---
+# Define a feedback message
+int32 which_shot  # 正在开第几枪

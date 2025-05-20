@@ -1,0 +1,10 @@
+# Define the goal
+string cmd # marker location cancel joy_control
+string marker # target_name
+float32[3] location  # x y r
+float32[2] velocity  # 角速度 线速度
+---
+# 
+bool result # 
+int32 power_percent # 0~100
+float32[3] current_pose # x y theta  单位m，rad 

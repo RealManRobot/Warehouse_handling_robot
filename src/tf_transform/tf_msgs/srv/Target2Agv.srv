@@ -1,0 +1,5 @@
+# 目标在机械臂base坐标系内位姿
+string label  
+---
+float32[7] Pose # pose:x y z  ori: w x y z
+bool state

@@ -1,0 +1,26 @@
+<?xml version="1.0"?>
+<launch>
+    <arg name="open_base" value="Base" />
+    <arg name="display" value="true" />
+
+    <!-- 打开双臂控制驱动 -->
+    <include file="$(find arm_driver)/launch/dual_arm_65_driver.launch"/>
+
+    <!-- 打开头部舵机驱动 -->
+    <include file="$(find servo_ros)/launch/servo_start.launch"/>
+
+    <!-- 相机识别驱动 -->
+    <include file="$(find d435_ros)/launch/camera_start.launch" />  <!-- python脚本启动 -->
+    <!-- <include file="$(find realsense2_camera)/launch/body_handling_camera.launch" /> -->
+
+    <!-- d435相机驱动 -->
+    <include file="$(find cam_identify)/launch/cam_identify.launch"/>
+    <!-- <include file="$(find cam_identify)/launch/realsense_identify.launch"/> -->
+
+    <!-- tf坐标树建立 -->
+    <include file="$(find tf_calculate)/launch/tfcoordinate_tree.launch">
+        <arg name="open_base" value="$(arg open_base)" />
+        <arg name="display" value="$(arg display)" />
+    </include>
+
+</launch>

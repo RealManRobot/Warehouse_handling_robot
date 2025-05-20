@@ -1,0 +1,6 @@
+int64 num
+string link_name
+float32 delayed
+---
+std_msgs/Header header
+geometry_msgs/Pose[2] pose     #位姿

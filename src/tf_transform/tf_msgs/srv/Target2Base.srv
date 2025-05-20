@@ -1,0 +1,6 @@
+# 目标在机械臂base坐标系内位姿
+string label  
+---
+float32[7] Pose # pose:x y z  ori: x y z w
+float32 angle # 针对yolov返回没有姿态时，只是返回了角度
+bool state

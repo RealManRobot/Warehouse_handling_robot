@@ -1,0 +1,7 @@
+<?xml version="1.0"?>
+<launch>
+    
+    <!-- 相机识别程序的驱动 -->
+    <node pkg="cam_demo" type="cam_demo.py" name="cam_demo_node" output="screen" />
+
+</launch>

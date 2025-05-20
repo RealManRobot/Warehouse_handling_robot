@@ -1,0 +1,4 @@
+# 机器人闲置动作设置
+int32 order
+---
+bool result
