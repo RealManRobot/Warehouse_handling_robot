@@ -47,8 +47,6 @@ void servoGetAngle(){
 }
 
 
-
-
 int main(int argc, char** argv) {
     
     ros::init(argc, argv, "my_serial_node");
@@ -111,4 +109,3 @@ int main(int argc, char** argv) {
     }
     ros_ser.close();
 }
-

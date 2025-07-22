@@ -11,9 +11,9 @@ from d435_ros.srv import PixelToCoordinate, PixelToCoordinateRequest, PixelToCoo
 
 # 相机名称字典
 CAMERA_NAME = {
-    "camera_left": '152122078151',
-    "camera_right": '152222072647',
-    "camera_middle": '052522070156'
+    "camera_left": '335522073085',
+    "camera_right": '334622071305',
+    "camera_middle": '335622072797'
 }
 
 

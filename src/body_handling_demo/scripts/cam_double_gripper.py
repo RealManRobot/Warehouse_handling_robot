@@ -371,7 +371,7 @@ class Robot_Action:
             self._wait_arm_planned(3)
 
             # 规划到物体
-            pose_vector = self._ar_tf_result(detect_result.pose, [0.140, -0.02, 0.083])
+            pose_vector = self._ar_tf_result(detect_result.pose, [0.1425, -0.02, 0.083])
             self._movejp_plan(pose_vector[0]["orientation"], pose_vector[0]["position"], 1)
             self._movejp_plan(pose_vector[1]["orientation"], pose_vector[1]["position"], 2)
             # 等待双臂规划目标物完成
@@ -474,14 +474,14 @@ class Robot_Action:
                 rospy.logwarn("机器人已切换至手动模式，请及时还原案例演示场景！")
             timer.shutdown()
 
-            # 缩紧机械臂, 作为标志代表接下来需要让机器人先停止，让人工进行操作之后再做搬运动作
+            # # 缩紧机械臂, 作为标志代表接下来需要让机器人先停止，让人工进行操作之后再做搬运动作
             # self._double_movej_s(0, speed=20)
 
-            # 游离升降机位置
-            self._set_lift_height(self.lift_height["5"], 60)
-            self._wait_arm_planned(1)
+            # # 游离升降机位置
+            # self._set_lift_height(self.lift_height["5"], 60)
+            # self._wait_arm_planned(1)
 
-            self._double_movej_s(4, speed=10)
+            # self._double_movej_s(4, speed=10)
 
             self._grip_materiel("open", 1)
             self._grip_materiel("open", 2)
@@ -513,49 +513,6 @@ class Robot_Action:
                     rospy.logwarn("成功切换至自动模式！")
                     time.sleep(5)
                 timer.shutdown()
-
-            # 升降机至抓取位置
-            self._set_lift_height(self.lift_height["6"], 60)
-            self._wait_arm_planned(1)
-            # 延迟数据
-            rospy.sleep(2)
-            # 连续识别抓取四次[]
-            for _ in range(0):
-                # —执行右臂抓取—
-
-                # 打开左侧相机
-                frame_id = "camera_left"
-                if self._set_camera_status(True, frame_id):
-                    
-                    # 执行左臂抓取
-                    self._secure_grip_arms(self.label_name[str(1)], frame_id, 1)
-                    # 关闭相机
-                    if self._set_camera_status(False, frame_id):
-                        pass
-                    else:
-                        rospy.logerr("左臂相机关闭失败，请检查装置！")
-                        return False
-                else:
-                    rospy.logerr("左臂相机打开失败，请检查装置！")
-                    return False
-                
-                # —执行右臂抓取—
-
-                # 打开右侧相机
-                frame_id = "camera_right"
-                
-                if self._set_camera_status(True, frame_id):
-
-                    # 执行右臂识别抓取
-                    self._secure_grip_arms(self.label_name[str(1)], frame_id, 2)
-                    if self._set_camera_status(False, frame_id):
-                        pass
-                    else:
-                        rospy.logerr("右臂相机关闭失败，请检查装置！")
-                        return False
-                else:
-                    rospy.logerr("右臂相机打开失败，请检查装置！")
-                    return False
             
             # 拿物料箱
             # 更改工具坐标系
@@ -599,13 +556,13 @@ class Robot_Action:
                 rospy.logerr("头部相机打开失败，请检察装置！")
                 return False
 
-            # 放回货架
-            # 升降机上移至运送位
-            self._set_lift_height(self.lift_height["5"], 60)
-            self._wait_arm_planned(1)
+            # # 放回货架
+            # # 升降机上移至运送位
+            # self._set_lift_height(self.lift_height["5"], 60)
+            # self._wait_arm_planned(1)
 
-            # 缩机械臂
-            self._double_movej_s(7, speed=10)
+            # # 缩机械臂
+            # self._double_movej_s(7, speed=10)
 
             rospy.logwarn(f"第{ 1 }次任务执行成功！")
 

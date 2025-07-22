@@ -140,7 +140,7 @@ int main(int argc, char **argv)
         static tf::TransformBroadcaster l_top_camera, r_top_camera, m_top_camera;
         // 初始化左臂tf数据，左臂相机标定
         tf::Transform camera_transform_l;
-        camera_transform_l.setOrigin(tf::Vector3(0.083744, -0.040517, 0.009167));
+        camera_transform_l.setOrigin(tf::Vector3(0.103744, -0.040517, 0.009167));
         tf::Quaternion quater_l;
         quater_l.setW(0.7057);
         quater_l.setX(-0.0124);
@@ -154,7 +154,7 @@ int main(int argc, char **argv)
         
         // 初始化右臂tf数据，右臂相机标定
         tf::Transform camera_transform_r;
-        camera_transform_r.setOrigin(tf::Vector3(0.083744, -0.043517, 0.009167));
+        camera_transform_r.setOrigin(tf::Vector3(0.103744, -0.043517, 0.009167));
         tf::Quaternion quater_r;
         quater_r.setW(0.7057);
         quater_r.setX(-0.0124);
@@ -169,12 +169,12 @@ int main(int argc, char **argv)
         // 初始化头部tf数据, 左头部相机标定
         tf::Transform camera_transform_midl;
 
-        camera_transform_midl.setOrigin(tf::Vector3(-0.160368, -0.091956, 0.114612));
+        camera_transform_midl.setOrigin(tf::Vector3(-0.146211, -0.102476, 0.110149));
         tf::Quaternion quater_midl;
-        quater_midl.setW(0.32180899);
-        quater_midl.setX(0.22992885);
-        quater_midl.setY(0.79605872);
-        quater_midl.setZ(-0.4581072);
+        quater_midl.setW(0.343942);
+        quater_midl.setX(0.182327);
+        quater_midl.setY(0.794347);
+        quater_midl.setZ(-0.466342);
         camera_transform_midl.setRotation(quater_midl);
 
         // 广播flange与base之间的tf数据
@@ -184,12 +184,12 @@ int main(int argc, char **argv)
         // 初始化头部tf数据, 右头部相机标定
         tf::Transform camera_transform_midr;
 
-        camera_transform_midr.setOrigin(tf::Vector3(0.198955, -0.109685, 0.068842));
+        camera_transform_midr.setOrigin(tf::Vector3(0.204049, -0.100638, 0.065227));
         tf::Quaternion quater_midr;
-        quater_midr.setW(-0.35264227);
-        quater_midr.setX(-0.17364313);
-        quater_midr.setY(0.80492861);
-        quater_midr.setZ(-0.44450133);
+        quater_midr.setW(0.320181);
+        quater_midr.setX(0.202702);
+        quater_midr.setY(-0.813887);
+        quater_midr.setZ(0.440436);
         camera_transform_midr.setRotation(quater_midr);
 
         // 广播flange与base之间的tf数据

@@ -1,6 +1,6 @@
 <launch>
     <!-- 设置相机的序列号 -->
-    <arg name="serial_no"           default="052522070156"/>
+    <arg name="serial_no"           default="335622072797"/>
 
     <!-- 设置USB端口ID -->
     <arg name="usb_port_id"         default=""/>

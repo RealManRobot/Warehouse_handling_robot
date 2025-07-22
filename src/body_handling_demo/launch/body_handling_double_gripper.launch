@@ -48,7 +48,7 @@
         <param name="charge_pose" value="120" type="string"/>
 
         <!-- 设置头部舵机扭动角度 -->
-        <rosparam param="servo_motor">[380, 500]</rosparam>
+        <rosparam param="servo_motor">[360, 500]</rosparam>
         <rosparam param="servo_tolerant">[3, 3]</rosparam> 
 
         <!-- 是否进行语音播报 -->

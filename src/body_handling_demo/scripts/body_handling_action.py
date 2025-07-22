@@ -12,6 +12,7 @@ import tf
 from std_msgs.msg import String
 # 导入thread模块
 import threading
+import random
 
 # 四元数计算
 import calculate_position as cp
@@ -39,6 +40,21 @@ import actionlib
 from geometry_msgs.msg import Pose
 
 
+# 打乱物料箱抓取位置
+def shuffle_list(col: int, row: int):
+    pose_list = list()
+
+    for col_index in range(col):
+        for row_index in range(row):
+            pose_list.append(str(col_index + 1) + str(row_index + 1))
+
+    # 随机打乱行顺序
+    random.shuffle(pose_list)
+    print("\n", pose_list)
+    
+    return pose_list
+
+
 class Robot_Action:
 
     def __init__(self):
@@ -48,12 +64,25 @@ class Robot_Action:
         # 设置机械臂规划状态监听
         self._left_is_plan_succeed = True
         self._right_is_plan_succeed = True
+        
+        # 设置物料抓取动作状态
+        self.actions_thread_event = { 1: False, 2: False }
 
         # 机器人等待事件属性
         self._wait_navigation_event = threading.Event()  # 等待导航事件
-        self._wait_arm_event = threading.Event()  # 等待机械臂事件
+        self._wait_arm_event = {1: threading.Event(), 2: threading.Event(), 3: threading.Event()}  # 等待机械臂事件
         self._wait_manual_event = threading.Event()  # 等待手动模式事件
         self._wait_auto_event = threading.Event()  # 等待自动模式事件
+        self._wait_arm_actions_event = threading.Event()  # 等待线程动作完成
+
+        # 设置线程锁
+        # 三个相机识别的线程锁
+        self.identify_lock = threading.Lock()
+        # 放置物品防碰撞的线程锁
+        self.placement_lock = threading.Lock()
+        # 双臂等待线程锁
+        self.arms_wait_lock = threading.Lock()
+        
         # **********事件状态控制变量********
         # 机器人模式控制
         self.robot_mode = 0
@@ -68,6 +97,10 @@ class Robot_Action:
         self._navigation_point = ""
         # 获取舵机误差
         self._servo_error = [3, 3]
+        # 物料框位置
+        self.cargo_boxes = list()
+        # 物料位置
+        self.cargoes = list()
 
         # 重新定义rospy.loginfo()与rospy.logerr()
         self._talk_flag = False
@@ -78,9 +111,13 @@ class Robot_Action:
         rospy.loginfo = self.robot_loginfo
         rospy.logerr = self.robot_logerr
         rospy.logwarn = self.robot_logwarn
+        # 控制数据变量初始化
+        self.ctrl_dict = dict()
 
-        # 参数服务器参数
-        self._get_rosparam()
+        # 识别状态是否被占用
+        self.identify_is_free = True
+        # 判断放置位置是否被占用
+        self.placement_is_free = True
 
         # 控制器版本获取监听者
         rospy.loginfo(f"The handling robot version is *v1.0.0*.")
@@ -122,6 +159,9 @@ class Robot_Action:
         self.servo_set_angle = rospy.Publisher("/servo_control/move", ServoMove, queue_size=10)
         self.servo_get_angle = rospy.Subscriber("/servo_state", ServoAngle, self._get_servo_angle, queue_size=10)
         
+        # 参数服务器参数
+        self._get_rosparam()
+
         # 底盘状态、电池电量订阅
         rospy.Subscriber("/robot_status", RobotStatus, self._woosh_status, queue_size=10)
         rospy.Subscriber("/battery", Battery, self._woosh_battery, queue_size=10)
@@ -135,13 +175,19 @@ class Robot_Action:
 
         # 初始化动作
         self._init_action()
-        rospy.sleep(2)
+        
+        # 播报程序启动成功指令
+        rospy.logwarn("欢迎来到睿尔曼展位，程序成功启动，请技术人员提前做好准备工作！")
+
+        rospy.sleep(10)
         # 创建任务执行线程
         self.action_thread = threading.Thread(target=self.execute)
     
+    # 析构函数
     def __del__(self):
         self.action_thread.join()
 
+    # 初始化action配置
     def _init_action(self):
         msg = ChangeTool_Name()
         # 初始化工具坐标系
@@ -153,18 +199,18 @@ class Robot_Action:
     # 获取ros参数服务器参数
     def _get_rosparam(self):
         # 物料框位置
-        self.cargo_boxes = list()
-        self.cargo_boxes.append(rospy.get_param("~cargo_box1", "11"))
-        self.cargo_boxes.append(rospy.get_param("~cargo_box2", "12"))
-        # self.cargo_boxes.append(rospy.get_param("~cargo_box3", "21"))
-        # self.cargo_boxes.append(rospy.get_param("~cargo_box4", "22"))
+        cargo_box_col = rospy.get_param("~cargo_box_col", 2)
+        cargo_box_row = rospy.get_param("~cargo_box_row", 2)
+        # 得到打乱之后的物料框位置
+        self.cargo_boxes = shuffle_list(cargo_box_col, cargo_box_row)
+        self.cargo_box_num = rospy.get_param("~cargo_box_num", 1)
+        self.cargoes_name = rospy.get_param("~cargoes_name", ["JiaoHuanJi", "NSK", "AnNiu", "YiHeDa"])
 
-        # 物料位置
-        self.cargoes = list()
-        self.cargoes.append(rospy.get_param("~cargo1", "101"))
-        self.cargoes.append(rospy.get_param("~cargo2", "102"))
-        self.cargoes.append(rospy.get_param("~cargo3", "103"))
-        self.cargoes.append(rospy.get_param("~cargo4", "104"))
+        for index in range(len(self.cargoes_name)):
+            # 不全成1xx类型的名称
+            self.cargoes.append("1" + f"{index + 1}".rjust(2, '0')[:3])
+
+        rospy.loginfo(f"Nav pose: { self.cargoes }!")
 
         # 工具坐标系名称
         self.left_tool1 = rospy.get_param("~left_tool1", "grip_left")
@@ -182,12 +228,10 @@ class Robot_Action:
                             "5": int(rospy.get_param("~lift_send", 0.6) * 1000),
                             "6": int(rospy.get_param("~lift_table", 0.3) * 1000)}
         
-        # 标签名
-        self.label_name = {"1": rospy.get_param("~label1", "NSK"), 
-                           "2": rospy.get_param("~label2", "JiaoHuanJi"), 
-                           "3": rospy.get_param("~label3", "AnNiu"), 
-                           "4": rospy.get_param("~label4", "YiHeDa"),
-                           "5": rospy.get_param("~label_ar", "Aruco")}
+        # 升降控制速度
+        self.lift_speed = rospy.get_param("~lift_speed", 50)
+        # 机械臂控制速度
+        self.arms_speed = rospy.get_param("~arms_speed", 30)
         
         # 是否进行语音播报
         self._talk_flag = rospy.get_param("~talk_flag", True)
@@ -213,8 +257,27 @@ class Robot_Action:
             2: rospy.get_param("~right_arm_poses")
         }
 
-        # rospy.loginfo(f"self.arm_joints={ self.arm_joints }")
-        # rospy.loginfo(f"self.arm_poses={ self.arm_poses }")
+        # 将用到的变量写进字典
+        self.ctrl_dict = {
+            1: {
+                "tools": [self.left_tool1, self.left_tool2, self.left_tool3],
+                "tools_pub": self.set_left_tool_frame,
+                "joints": [
+                    self.arm_joints[1][4],    # 识别姿态
+                    self.arm_joints[1][5],    # 过渡姿态
+                    self.arm_joints[1][6],    # 放置物料姿态
+                ]
+            },
+            2: {
+                "tools": [self.right_tool1, self.right_tool2, self.right_tool3],
+                "tools_pub": self.set_right_tool_frame,
+                "joints": [
+                    self.arm_joints[2][4],    # 识别姿态
+                    self.arm_joints[2][5],    # 过渡姿态
+                    self.arm_joints[2][6],    # 放置物料姿态
+                ]
+            }
+        }
 
     # 语音播报模块
     def _robot_talk_about(self, infor: str):
@@ -240,21 +303,6 @@ class Robot_Action:
         # if self._talk_flag:
         #     self._robot_talk_about(msg)
         self.loginfo(msg)
-
-    # 动作执行
-    def _set_chassis_step(self, data: float, speed: float, mode=StepControlGoal.STRAIGHT):
-        # 设置目标
-        goal = StepControlGoal()
-        step_control = StepControl()
-        step_control.data = data
-        step_control.speed = speed
-        step_control.executeMode = mode
-        goal.stepControl.append(step_control)
-        goal.useAvoid = False
-        goal.mode = goal.EXCUTE
-
-        # 发送目标并绑定回调函数
-        self.step_ctrl_pub.publish(goal)
 
     # 监听底盘电量状态
     def _woosh_battery(self, msg: Battery):
@@ -291,7 +339,6 @@ class Robot_Action:
         rospy.loginfo(f"[Work   mode]:<{msg.work_mode}>")
         rospy.loginfo(f"{ '*' * 20 }")
 
-
     # 监听left机械臂规划状态
     def _plan_left_state(self, msg: Plan_State):
         self._left_is_plan_succeed = msg.state
@@ -308,15 +355,15 @@ class Robot_Action:
         # self._left_is_plan_succeed = False
         # self._right_is_plan_succeed = False
         # 清除事件应用
-        self._wait_arm_event.clear()
+        self._wait_arm_event[type].clear()
         
         # 创建时间戳
         timer = rospy.Timer(rospy.Duration(0.5), 
                             callback=lambda event: self._arm_timestemp_listen(
                                 arm_type=type
                             ), oneshot=False)
-        
-        if not self._wait_arm_event.wait(timeout=timeout):
+        # 等待机械臂完成规划
+        if not self._wait_arm_event[type].wait(timeout=timeout):
             rospy.logerr(f"机械臂未在{ timeout }秒内完成规划，请将物料放置合适位置")
             timer.shutdown()
             return False
@@ -358,22 +405,22 @@ class Robot_Action:
         if detect_result.header.frame_id != '':
             # 规划到物体上方
             pose_vector = self._ar_tf_result(detect_result.pose, [0.17, -0.0855, 0.083]) # -0.17, -0.0855, 0.09
-            self._movejp_plan(pose_vector[0]["orientation"], pose_vector[0]["position"], 1)
-            self._movejp_plan(pose_vector[1]["orientation"], pose_vector[1]["position"], 2)
+            self._movejp_plan(pose_vector[0]["orientation"], pose_vector[0]["position"], 1, speed=self.arms_speed)
+            self._movejp_plan(pose_vector[1]["orientation"], pose_vector[1]["position"], 2, speed=self.arms_speed)
             # 等待双臂规划目标物上方完成
             self._wait_arm_planned(3)
 
             # 规划到物体两侧
             pose_vector = self._ar_tf_result(detect_result.pose, [0.17, -0.02, 0.083])
-            self._movejp_plan(pose_vector[0]["orientation"], pose_vector[0]["position"], 1)
-            self._movejp_plan(pose_vector[1]["orientation"], pose_vector[1]["position"], 2)
+            self._movejp_plan(pose_vector[0]["orientation"], pose_vector[0]["position"], 1, speed=self.arms_speed)
+            self._movejp_plan(pose_vector[1]["orientation"], pose_vector[1]["position"], 2, speed=self.arms_speed)
             # 等待双臂规划目标物上方完成
             self._wait_arm_planned(3)
 
             # 规划到物体
             pose_vector = self._ar_tf_result(detect_result.pose, [0.14, -0.02, 0.083])
-            self._movejp_plan(pose_vector[0]["orientation"], pose_vector[0]["position"], 1)
-            self._movejp_plan(pose_vector[1]["orientation"], pose_vector[1]["position"], 2)
+            self._movejp_plan(pose_vector[0]["orientation"], pose_vector[0]["position"], 1, speed=self.arms_speed)
+            self._movejp_plan(pose_vector[1]["orientation"], pose_vector[1]["position"], 2, speed=self.arms_speed)
             # 等待双臂规划目标物完成
             self._wait_arm_planned(3)
         else:
@@ -411,7 +458,36 @@ class Robot_Action:
                 pass
 
         # rospy.loginfo(f"Auto electricize: { self._auto_electricize }")
+
+    # 等待线程执行完毕完成
+    def _arms_actions_status(self, event):
+        # 线程动作状态
+        if self.actions_thread_event[1] and self.actions_thread_event[2]:
+            self._wait_arm_actions_event.set()
+            # 还原抓取状态
+            self.actions_thread_event[1] = False
+            self.actions_thread_event[2] = False
+        else:
+            pass
     
+    def _wait_actions_finish(self, timeout: int=3600):
+
+        # 清除动作线程
+        self._wait_arm_actions_event.clear()
+
+        # 创建时间戳
+        timer = rospy.Timer(rospy.Duration(0.5), self._arms_actions_status, False)
+        
+        # 等待数据
+        if not self._wait_arm_actions_event.wait(timeout=timeout):
+            rospy.logerr("动作通讯未按时完成！")
+            timer.shutdown()
+            return False
+        else:
+            rospy.loginfo(f"Arm execution was successful!")
+            timer.shutdown()
+            return True
+
     # ------------------------------------ 总执行程序
     def execute(self):
         
@@ -475,12 +551,12 @@ class Robot_Action:
             timer.shutdown()
 
             # 游离升降机位置
-            self._set_lift_height(self.lift_height["5"], 60)
+            self._set_lift_height(self.lift_height["5"], self.lift_speed)
             self._wait_arm_planned(1)
 
             # 缩紧机械臂, 作为标志代表接下来需要让机器人先停止，让人工进行操作之后再做搬运动作
-            self._double_movej_s(0, speed=10)
-
+            self._double_movej_s(0, speed=self.arms_speed)
+            # 双臂抓取
             self._grip_materiel("open", 1)
             self._grip_materiel("open", 2)
             rospy.sleep(3)
@@ -512,8 +588,8 @@ class Robot_Action:
                     time.sleep(5)
                 timer.shutdown()
 
-            # 循环遍历2个动作
-            for index in range(len(self.cargo_boxes)):
+            # 循环遍历n个整体任务
+            for index in range(self.cargo_box_num):
                 if self._navigation_point != self.cargo_boxes[index][0]:
                     # 到达过渡点位
                     self._navigation_wait(self._navigation_plan(self.cargo_boxes[index][0] + "0"))
@@ -522,7 +598,7 @@ class Robot_Action:
                     pass
                 
                 # 将升降机升降到物料框固定位置上方
-                self._set_lift_height(self.lift_height[self.cargo_boxes[index][1]], 60)
+                self._set_lift_height(self.lift_height[self.cargo_boxes[index][1]], self.lift_speed)
                 self._wait_arm_planned(1)
 
                 # 将底盘规划到待抓取点位
@@ -530,11 +606,11 @@ class Robot_Action:
                 self._navigation_point = self.cargo_boxes[index][0]
 
                 # 将双臂伸进
-                self._double_movel_s(0, speed=10)
+                self._double_movel_s(0, speed=self.arms_speed)
                 # print(4)
 
                 # 将升降机升降到物料框固定位置
-                self._set_lift_height(self.lift_height[self.cargo_boxes[index][1]] - 50, 60)
+                self._set_lift_height(self.lift_height[self.cargo_boxes[index][1]] - 50, self.lift_speed)
                 self._wait_arm_planned(1)
 
                 # 更改工具坐标系
@@ -568,87 +644,61 @@ class Robot_Action:
                     return False
 
                 # 升降机上移
-                self._set_lift_height(self.lift_height[self.cargo_boxes[index][1]] + 30, 60)
+                self._set_lift_height(self.lift_height[self.cargo_boxes[index][1]] + 30, self.lift_speed)
                 self._wait_arm_planned(1)
 
                 # 缩机械臂, 到达目标位
-                self._double_movej_s(1, speed=10)
+                self._double_movej_s(1, speed=self.arms_speed)
                 
                 rospy.logwarn(f"机器人将装填第{ self.cargo_boxes[index][0] }列，第{ self.cargo_boxes[index][1] }层的物料框！")
 
                 # 控制底盘后退
-                self._base_step_plan(-0.3)
+                if not self._base_step_plan(-0.3):
+                    rospy.logerr("机器人步进服务回调失败！")
                 # 行走至物料目标位
                 carry = self._navigation_plan(self.cargoes[index])
                 # 延时6秒执行, 防止碰到货架
                 rospy.sleep(5)
                 
                 # 升降机移动至运送位
-                self._set_lift_height(self.lift_height["5"], 60)
+                self._set_lift_height(self.lift_height["5"], self.lift_speed)
                 self._wait_arm_planned(1)
                 self._navigation_wait(carry=carry)
 
                 # 双臂放置盒子
-                self._double_movej_s(2, speed=10)
-
+                self._double_movej_s(2, speed=self.arms_speed)
 
                 # 升降机至桌子上
-                self._set_lift_height(self.lift_height["6"] - 35, 60)
+                self._set_lift_height(self.lift_height["6"] - 35, self.lift_speed)
                 self._wait_arm_planned(1)
             
                 # 双臂拿开
-                self._double_movej_s(3, speed=10)
+                self._double_movej_s(3, speed=self.arms_speed)
 
                 # 升降机至识别位置
-                self._set_lift_height(self.lift_height["6"] + 50, 60)
+                self._set_lift_height(self.lift_height["6"] + 50, self.lift_speed)
                 self._wait_arm_planned(1)
 
                 # 双臂至识别目标物位姿
-                self._double_movej_s(4, speed=10)
+                self._double_movej_s(4, speed=self.arms_speed)
 
                 # 升降机至抓取位置
-                self._set_lift_height(self.lift_height["6"], 60)
+                self._set_lift_height(self.lift_height["6"], self.lift_speed)
                 self._wait_arm_planned(1)
                 # 延迟数据
-                rospy.sleep(2)
-                # 连续识别抓取四次[]
-                for _ in range(4):
-                    # —执行右臂抓取—
+                rospy.sleep(1)
 
-                    # 打开左侧相机
-                    frame_id = "camera_left"
-                    if self._set_camera_status(True, frame_id):
-                        
-                        # 执行左臂抓取
-                        self._secure_grip_arms(self.label_name[str(index + 1)], frame_id, 1)
-                        # 关闭相机
-                        if self._set_camera_status(False, frame_id):
-                            pass
-                        else:
-                            rospy.logerr("左臂相机关闭失败，请检查装置！")
-                            return False
-                    else:
-                        rospy.logerr("左臂相机打开失败，请检查装置！")
-                        return False
-                    
-                    # —执行右臂抓取—
-
-                    # 打开右侧相机
-                    frame_id = "camera_right"
-                    
-                    if self._set_camera_status(True, frame_id):
-
-                        # 执行右臂识别抓取
-                        self._secure_grip_arms(self.label_name[str(index + 1)], frame_id, 2)
-                        if self._set_camera_status(False, frame_id):
-                            pass
-                        else:
-                            rospy.logerr("右臂相机关闭失败，请检查装置！")
-                            return False
-                    else:
-                        rospy.logerr("右臂相机打开失败，请检查装置！")
-                        return False
+                # 线程抓取物料到物料箱子
+                self.left_thread = threading.Thread(target=self._arm_actions_of_thread, args=("camera_left", 1, index, self.arms_speed))
+                self.right_thread = threading.Thread(target=self._arm_actions_of_thread, args=("camera_right", 2, index, self.arms_speed))
                 
+                # 手臂线程开始
+                self.left_thread.start()
+                self.right_thread.start()
+
+                # 等待抓取到物料框完成
+                self._wait_actions_finish(3600)
+
                 # 拿物料箱
                 # 更改工具坐标系
                 coor_name = ChangeTool_Name()
@@ -663,14 +713,14 @@ class Robot_Action:
                     rospy.sleep(0.1)
 
                 # 升降机至桌子上方
-                self._set_lift_height(self.lift_height["6"] + 50, 60)
+                self._set_lift_height(self.lift_height["6"] + 50, self.lift_speed)
                 self._wait_arm_planned(1)
 
                 # 将机械臂伸进
-                self._double_movej_s(3, speed=10)
+                self._double_movej_s(3, speed=self.arms_speed)
 
                 # 升降机至桌子上
-                self._set_lift_height(self.lift_height["6"], 60)
+                self._set_lift_height(self.lift_height["6"], self.lift_speed)
                 self._wait_arm_planned(1)
 
                 frame_id = "camera_middle"
@@ -693,46 +743,44 @@ class Robot_Action:
 
                 # 放回货架
                 # 升降机上移至运送位
-                self._set_lift_height(self.lift_height["5"], 60)
+                self._set_lift_height(self.lift_height["5"], self.lift_speed)
                 self._wait_arm_planned(1)
 
                 # 缩机械臂
-                self._double_movej_s(7, speed=10)
+                self._double_movej_s(7, speed=self.arms_speed)
 
                 # 控制底盘后退
-                self._base_step_plan(-0.15)  # 后退0.2
+                if not self._base_step_plan(-0.15):
+                    rospy.logerr("机器人步进服务回调失败！")
 
                 # 等待升降机至拿货位
                 self._navigation_wait(self._navigation_plan(self.cargo_boxes[index][0] + "0"))
 
                 # 升降机至货架位
-                self._set_lift_height(self.lift_height[self.cargo_boxes[index][1]], 60)
+                self._set_lift_height(self.lift_height[self.cargo_boxes[index][1]], self.lift_speed)
                 self._wait_arm_planned(1)
 
                 # 行走至货架目标位
                 self._navigation_wait(self._navigation_plan(self.cargo_boxes[index][0]))
 
                 # 将装好的框放置在货架上去伸机械臂 
-                self._double_movej_s(8, speed=10)
+                self._double_movej_s(8, speed=self.arms_speed)
 
                 # 升降机至放置位
-                self._set_lift_height(self.lift_height[self.cargo_boxes[index][1]] - 95, 60)
+                self._set_lift_height(self.lift_height[self.cargo_boxes[index][1]] - 95, self.lift_speed)
                 self._wait_arm_planned(1)
-
                 # 双臂拿开
-                self._double_movej_s(3, speed=10)
-
+                self._double_movej_s(3, speed=self.arms_speed)
                 # 升降机至货架位
-                self._set_lift_height(self.lift_height[self.cargo_boxes[index][1]], 60)
+                self._set_lift_height(self.lift_height[self.cargo_boxes[index][1]], self.lift_speed)
                 self._wait_arm_planned(1)
-
                 # 缩紧机械臂
-                self._double_movel_s(1, speed=10)
-
+                self._double_movel_s(1, speed=self.arms_speed)
 
                 # 控制底盘后退
-                self._base_step_plan(-0.3)  # 后退0.3
-
+                if not self._base_step_plan(-0.3):
+                    rospy.logerr("机器人步进服务回调失败！")
+                
                 rospy.logwarn(f"第{ index + 1 }次任务执行成功！")
 
             # 重新一轮demo演示，将已到达的位置初始化
@@ -752,99 +800,113 @@ class Robot_Action:
         self._movel_plan(self.arm_poses[2][index][0], self.arm_poses[2][index][1], 2, speed)
         self._wait_arm_planned(3)
 
-    # 双臂位资抓取+判断是否能够抓取成功
-    def _secure_grip_arms(self, label_name: str, frame_id: str, ctrl_type: int):
-        # 将用到的变量写进字典
-        ctrl_dict = {
-            1: {
-                "tools": [self.left_tool1, self.left_tool2, self.left_tool3],
-                "tools_pub": self.set_left_tool_frame,
-                "joints": [
-                    self.arm_joints[1][4],    # 识别姿态
-                    self.arm_joints[1][5],    # 过渡姿态
-                    self.arm_joints[1][6],    # 放置物料姿态
-                ]
-            },
-            2: {
-                "tools": [self.right_tool1, self.right_tool2, self.right_tool3],
-                "tools_pub": self.set_right_tool_frame,
-                "joints": [
-                    self.arm_joints[2][4],    # 识别姿态
-                    self.arm_joints[2][5],    # 过渡姿态
-                    self.arm_joints[2][6],    # 放置物料姿态
-                ]
-            }
-        }
-
-        # 切换左臂工具坐标系至tip，进行识别
-        coor_name = ChangeTool_Name()
-        coor_name.toolname = ctrl_dict[ctrl_type]["tools"][2]
-        for _ in range(3):
-            ctrl_dict[ctrl_type]["tools_pub"].publish(coor_name)
-            rospy.sleep(0.1)
-
-        # 用moveJ规划到识别位姿
-        self._movej_plan(ctrl_dict[ctrl_type]["joints"][0], ctrl_type)
-        # 判断是否规划成功
-        if not self._wait_arm_planned(ctrl_type):
-            return self._secure_grip_arms(label_name, frame_id, ctrl_type)
-
-        # 得到识别结果
-        detect_result = self._get_material_detect_result(label_name, frame_id, 20.0)
-        q_, v_ = self._analysis_materiel_detect_result(detect_result.pose)
-
-        # 切换工具坐标系至grip_left, 进行抓取
-        coor_name = ChangeTool_Name()
-        coor_name.toolname = ctrl_dict[ctrl_type]["tools"][0]
-        for _ in range(3):
-            ctrl_dict[ctrl_type]["tools_pub"].publish(coor_name)
-            rospy.sleep(0.1)
-
-        # 抓取过程
-        # 增加延迟，避免抓取过程中工具坐标系没有改正过来
-        time.sleep(0.5)
-
-        v = v_.copy()
-        v[2] += 0.03
-
-        # 计算机器人预抓取位置
+    # 双臂抓取物料时的动作线程
+    def _arm_actions_of_thread(self, frame_id: str, ctrl_type: int, cargoe_index: int, arm_speed: int=10):
         if ctrl_type == 1:
-            v[0] -= 0.03
-        elif ctrl_type == 2:
-            v[0] += 0.03
+            arm_name = "左臂"
+        else:
+            arm_name = "右臂"
+        
+        # 初始化次数
+        index = 0
+        # 添加循环执行
+        while index < 4:
 
-        self._movejp_plan(q_, v, ctrl_type)
-        if not self._wait_arm_planned(ctrl_type):
-            return self._secure_grip_arms(label_name, frame_id, ctrl_type)
+            # 切换左臂工具坐标系至tip，进行识别
+            coor_name = ChangeTool_Name()
+            coor_name.toolname = self.ctrl_dict[ctrl_type]["tools"][2]
+            for _ in range(3):
+                self.ctrl_dict[ctrl_type]["tools_pub"].publish(coor_name)
+                rospy.sleep(0.1)
+            # 初始化默认值
+            detect_result = None
+            # 打开相机(加上线程锁)
+            with self.identify_lock: 
+                if self._set_camera_status(True, frame_id):
+                    # 执行视觉识别得到结果
+                    # 得到识别结果
+                    detect_result = self._get_material_detect_result(self.cargoes_name[cargoe_index], frame_id, 20.0)
+                    rospy.loginfo(f"Detect result =>: {self.cargoes_name[cargoe_index]}")
 
-        self._movejp_plan(q_, v_, ctrl_type)
-        if not self._wait_arm_planned(ctrl_type):
-            return self._secure_grip_arms(label_name, frame_id, ctrl_type)
+                    if self._set_camera_status(False, frame_id):
+                        pass
+                    else:
+                        rospy.logerr(f"{arm_name}相机关闭失败，请检查装置！")
+                        exit(0)
+                else:
+                    rospy.logerr(f"{arm_name}相机打开失败，请检察装置！")
+                    exit(0)
 
-        self._grip_materiel("close", ctrl_type)
-        rospy.sleep(3)
-        self._movejp_plan(q_, v, ctrl_type)
-        if not self._wait_arm_planned(ctrl_type):
-            return self._secure_grip_arms(label_name, frame_id, ctrl_type)
+            # 分析物料识别动作
+            q_, v_ = self._analysis_materiel_detect_result(detect_result.pose)
+            if all(v__ == 0.0 for v__ in v_):
+                rospy.logwarn(f"{arm_name}识别数据为零！")
+                continue
 
-        # 过渡姿态
-        self._movej_plan(ctrl_dict[ctrl_type]["joints"][1], ctrl_type)
-        if not self._wait_arm_planned(ctrl_type):
-            return self._secure_grip_arms(label_name, frame_id, ctrl_type)
+            # 切换工具坐标系至grip_left, 进行抓取
+            coor_name = ChangeTool_Name()
+            coor_name.toolname = self.ctrl_dict[ctrl_type]["tools"][0]
+            for _ in range(3):
+                self.ctrl_dict[ctrl_type]["tools_pub"].publish(coor_name)
+                rospy.sleep(0.1)
 
-        # 放置姿态
-        self._movej_plan(ctrl_dict[ctrl_type]["joints"][2], ctrl_type)
-        if not self._wait_arm_planned(ctrl_type):
-            return self._secure_grip_arms(label_name, frame_id, ctrl_type)
+            # 抓取过程
+            # 增加延迟，避免抓取过程中工具坐标系没有改正过来
+            time.sleep(0.5)
 
-        self._grip_materiel("open", ctrl_type)
-        rospy.sleep(3)
-        # 识别姿态
-        self._movej_plan(ctrl_dict[ctrl_type]["joints"][0], ctrl_type)
-        if not self._wait_arm_planned(ctrl_type):
-            return self._secure_grip_arms(label_name, frame_id, ctrl_type)
+            v = v_.copy()
+            v[2] += 0.03
 
-        return True
+            # 计算机器人预抓取位置
+            if ctrl_type == 1:
+                v[0] -= 0.03
+            elif ctrl_type == 2:
+                v[0] += 0.03
+
+            self._movejp_plan(q_, v, ctrl_type, speed=arm_speed)
+            if not self._wait_arm_planned(ctrl_type):
+                rospy.logwarn(f"{arm_name}预抓取动作执行失败！")
+                continue
+
+            self._movejp_plan(q_, v_, ctrl_type, speed=arm_speed)
+            if not self._wait_arm_planned(ctrl_type):
+                rospy.logwarn(f"{arm_name}抓取动作执行失败！")
+                continue
+
+            self._grip_materiel("close", ctrl_type)
+            rospy.sleep(3)
+            self._movejp_plan(q_, v, ctrl_type, speed=arm_speed)
+            if not self._wait_arm_planned(ctrl_type):
+                rospy.logwarn(f"{arm_name}拿开动作执行失败！")
+                # 放回物料
+                self._movejp_plan(q_, v_, ctrl_type, speed=arm_speed)
+                self._wait_arm_planned(ctrl_type)
+                # 打开夹爪
+                self._grip_materiel("open", ctrl_type, speed=arm_speed)
+                rospy.sleep(3)
+                continue
+
+            # 过渡姿态
+            self._movej_plan(self.ctrl_dict[ctrl_type]["joints"][1], ctrl_type, speed=arm_speed)
+            self._wait_arm_planned(ctrl_type)
+
+            # 放置动作中容易发生碰撞，需要加上线程锁，避免两个臂同时放置物料到物料框中
+            with self.placement_lock:
+                # 放置姿态
+                self._movej_plan(self.ctrl_dict[ctrl_type]["joints"][2], ctrl_type, speed=arm_speed)
+                self._wait_arm_planned(ctrl_type)
+
+                self._grip_materiel("open", ctrl_type)
+                rospy.sleep(3)
+                # 识别姿态
+                self._movej_plan(self.ctrl_dict[ctrl_type]["joints"][0], ctrl_type, speed=arm_speed)
+                self._wait_arm_planned(ctrl_type)
+
+            # 累加
+            index += 1
+        
+        # 机械臂抓取动作完成
+        self.actions_thread_event[ctrl_type] = True
 
 
     # 机器人步进运动
@@ -859,7 +921,7 @@ class Robot_Action:
             return False
         
         # 设置机器人动作状态为执行
-        goal.mode = mode
+        goal.mode = 1
         # 是否躲避障碍物
         goal.useAvoid = use_avoid
         
@@ -890,8 +952,10 @@ class Robot_Action:
                 rospy.loginfo("Move backward completed successfully")
                 return True
             else:
-                rospy.logerr("Move backward failed")
-                return False
+                rospy.loginfo(f"Service state is: {self.base_step_client.get_state()}")
+                rospy.logwarn("注意，旁边有障碍，请避让")
+                time.sleep(5)
+                return self._base_step_plan(step=step, speed=speed)
 
     # 抓取物料
     def _grip_materiel(self, com: str, type: int):
@@ -1042,13 +1106,16 @@ class Robot_Action:
             arm_type: int
         """
         if arm_type == 1 and self._left_is_plan_succeed:
-            self._wait_arm_event.set()
+            # 打开左臂
+            self._wait_arm_event[arm_type].set()
             rospy.loginfo("Left arm was successful!")
         elif arm_type == 2 and self._right_is_plan_succeed:
-            self._wait_arm_event.set()
+            # 打开右臂
+            self._wait_arm_event[arm_type].set()
             rospy.loginfo("Right arm was successful!")
         elif arm_type == 3 and self._right_is_plan_succeed and self._left_is_plan_succeed:
-            self._wait_arm_event.set()
+            # 打开左臂右臂
+            self._wait_arm_event[arm_type].set()
             rospy.loginfo("Right and Left arms were successful!")
         else:
             pass
@@ -1064,8 +1131,8 @@ class Robot_Action:
         req.task_type_no = 0
         req.mark_no = mark_no
         self._woosh_task_is_succeed = False  # 避免底盘状态改变之后自己来不及置零，也避免执行过快忽略置零。
+        
         res = self.navigation_point(req)
-
         return res.success
     
     # 导航等待

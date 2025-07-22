@@ -98,6 +98,15 @@ class Material_Identify:
         self.parameters = cv2.aruco.DetectorParameters()
         self.camera_is_closed = True
 
+        # 头部相机识别aruco码
+        self.angle_history = []  # 存储历史角度数据
+        self.history_size = 10    # 考虑前10帧数据
+        self.stability_threshold = 0.1  # 稳定性阈值(弧度)，可根据需要调整
+        self.stable_status = False  # 当前是否稳定
+
+        self.prev_rvec = None   # 前一帧数据
+        self.smoothing_factor = 0.8  # 平滑系数，可调整
+
         # 初始化成功
         rospy.loginfo("Identification can begin!")
 
@@ -122,6 +131,27 @@ class Material_Identify:
         Z = depth
 
         return [X, Y, Z]
+    
+    def __get_average_depth(self, depth_image, x, y, ranged: int=3):
+
+        # 循环获取平均值
+        number_depth = 0
+        number_depth_sum = 0
+
+        for u in range(x - int(ranged / 2), x + int(ranged / 2) + 1):
+            for v in range(y - int(ranged / 2), y + int(ranged / 2) + 1):
+                # 求出深度值
+                coordinate = self.__get_camera_coords(depth_image, self.camera_matrix, u, v)
+                # 判断深度值是否为零值
+                if coordinate[2] != 0:
+                    number_depth_sum += coordinate[2]
+                    number_depth += 1
+
+        # 求得平均值
+        if not number_depth:
+            return 0.0, 0.0, 0.0
+        else:
+            return coordinate[0], coordinate[1], number_depth_sum / float(number_depth)
 
     def _hand_target_callback(self, req: HandResultRequest):
         res = HandResultResponse()
@@ -157,10 +187,10 @@ class Material_Identify:
                 annotated_frame, obj_img = self.detect.backward_handle_output(self.tag, results, color_img, depth_img, 
                                                                               self.solver_weights, nc=self.nc, input=req.label)
 
-                self.target_image = annotated_frame
-                # self.image_ready.set()  # 通知子线程图像数据已经准备好
 
-                if obj_img is not None:
+                print("obj_img=", obj_img)
+
+                if obj_img is not None and len(obj_img):
 
                     # ————————————————————————————————————————————————————————————————————————————————————
                     # 初始化最小 pose_z 和对应的索引
@@ -168,12 +198,15 @@ class Material_Identify:
                     min_pose_z_index = -1
                     # 遍历 obj_img 列表
                     for i in range(len(obj_img)):
-                        res_coordinate = self.__get_camera_coords(depth_img, self.camera_matrix, obj_img[i][0][0], obj_img[i][0][1])
+                        res_coordinate = self.__get_average_depth(depth_img, obj_img[i][0][0], obj_img[i][0][1], 3)
+                        # res_coordinate = self.__get_camera_coords(depth_img, self.camera_matrix, obj_img[i][0][0], obj_img[i][0][1])
 
                         # 检查当前 pose_z 是否小于当前最小值且不为零
                         if res_coordinate[2] != 0.0 and res_coordinate[2] < min_pose_z:
                             min_pose_z = res_coordinate[2]
                             min_pose_z_index = i
+
+                    print("x, y=", obj_img[min_pose_z_index][0][0], obj_img[min_pose_z_index][0][1])
 
                     # 输出最小 pose_z 及其对应的索引
                     if min_pose_z_index != -1:
@@ -183,9 +216,7 @@ class Material_Identify:
                         #                                                                  obj_img[min_pose_z_index][0][1]))
 
                         # 得到z轴最小值的目标框相关信息数据
-                        res_coordinate = self.__get_camera_coords(depth_img, self.camera_matrix, 
-                                                                  obj_img[min_pose_z_index][0][0], 
-                                                                  obj_img[min_pose_z_index][0][1])
+                        res_coordinate = self.__get_average_depth(depth_img, obj_img[min_pose_z_index][0][0], obj_img[min_pose_z_index][0][1])
 
                         print(f'The four vertices of the object are: {obj_img[min_pose_z_index][1]}')
                         print(f'The width and height of the object are: {obj_img[min_pose_z_index][2]}')
@@ -317,21 +348,47 @@ class Material_Identify:
                 
                 if index is not None:
                     # 计算 ArUco 码的位姿
-                    rvec, tvec, _ = cv2.aruco.estimatePoseSingleMarkers(corners[index], 0.02975, self.camera_matrix, self.dist_coeffs)
+                    rvec, tvec, _ = cv2.aruco.estimatePoseSingleMarkers(
+                        corners[index], 0.02975, self.camera_matrix, self.dist_coeffs)
                     
-                    # # 设置子线程
-                    # self.camera_show_thread = threading.Thread(target=self._display_image, 
-                    #                                            args=(self.camera_frame_id, 5))
-                    # self.camera_show_thread.start()
-                    # 将图片传为显示框
-                    self.target_image = self.color_image
-                    self.image_ready.set()  # 通知子线程图像数据已准备好
+                    # 确保rvec和tvec是正确形状 (3,1)
+                    rvec_ = rvec[0].reshape(3, 1)
 
-                    # 打印三维坐标和姿态（旋转向量）
-                    print(f"Marker ID: {ids[index][0]}, Position: {tvec[0][0]}, Rotation Vector: {rvec[0][0]}")
+                    # 获取当前角度(使用旋转向量的范数)
+                    current_angle = np.linalg.norm(rvec_)
+
+                    # 更新历史数据
+                    self.angle_history.append(current_angle)
+                    if len(self.angle_history) > self.history_size:
+                        self.angle_history.pop(0)
+
+                    # 检查稳定性
+                    if len(self.angle_history) == self.history_size:
+                        # 计算当前角度与前n帧的最大差异
+                        max_diff = max(abs(current_angle - angle) for angle in self.angle_history[:-1])
+                        self.stable_status = max_diff < self.stability_threshold
+                    
+                    # 输出
+                    print(f"Result=>: {self.stable_status}")
+
+                    # 角度平滑处理
+                    if self.prev_rvec is None:
+                        # 第一次检测，直接使用当前值
+                        self.prev_rvec = rvec_.copy()
+                    else:
+                        # 应用平滑滤波
+                        rvec_ = self.smoothing_factor * rvec_ + (1 - self.smoothing_factor) * self.prev_rvec
+                        self.prev_rvec = rvec_.copy()
+                    
+                    if not self.stable_status:
+                         # 打印三维坐标和姿态（旋转向量）
+                        print(f"Marker ID: {ids[index][0]}, Position: {tvec[0][0]}, Rotation Vector: {rvec_}")
+                        self.depth_image = np.array([])
+                        self.color_image = np.array([])
+                        continue
 
                     # 将旋转角度转换为四元数
-                    quaternion = tf.transformations.quaternion_from_euler(rvec[0][0][0], rvec[0][0][2], -rvec[0][0][1])
+                    quaternion = tf.transformations.quaternion_from_euler(rvec_[0], rvec_[2], -rvec_[1])
 
                     # 得到坐标转换关系,矫正坐标系与工作坐标系对应
                     # 得到识别到的坐标系基于夹爪坐标系的旋转四元数算子
@@ -400,8 +457,10 @@ class Material_Identify:
 
                     # 关闭相机
                     self.camera_is_closed = True
+                    self.stable_status = False
                     self.depth_image = np.array([])
                     self.color_image = np.array([])
+                    self.angle_history = []
                     # self.camera_show_thread.join()
                     # cv2.destroyAllWindows()
                     return res
