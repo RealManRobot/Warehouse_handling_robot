@@ -1,0 +1,8 @@
+# 获取目标检测的位姿
+string cmd	# get_joint or set_tcp_rpy set_tcp_quat  set_tcp_joint
+float32[7] Pose #moveJ_P对应的是位姿，move_J对应的是关节角度,四元数xyz xyzw
+bool Non_Block # true :非阻塞   false：阻塞   默认是阻塞
+float32 speed
+---
+bool state   #
+float32[7] Pose  #如果在moveJ_P中调用返回的是位资，如果是moveJ中调用返回的是关节角度

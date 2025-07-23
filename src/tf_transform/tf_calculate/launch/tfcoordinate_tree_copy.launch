@@ -1,0 +1,43 @@
+<launch>
+    <!-- base坐标系是否作为基坐标系 -->
+    <arg name="open_base" default="World"/>
+    
+    <!-- 设置base坐标系名称 -->
+    <arg name="right_base" default="right_base"/>
+    <arg name="left_base" default="left_base"/> <!-- 全局定义left_base参数 -->
+
+    <!-- 启动静态变换发布者 -->
+    <group if="$(eval open_base == 'Base')">
+        <node pkg="tf" type="static_transform_publisher" name="base_link_to_$(arg left_base)" args="0.06 0 0 0 0.7854 0 base_link $(arg left_base) 100" />
+        <node pkg="tf" type="static_transform_publisher" name="base_link_to_$(arg right_base)" args="-0.06 0 0 0 -0.7854 0 base_link $(arg right_base) 100" />
+    </group>
+
+    <group if="$(eval open_base == 'World')">
+        <node pkg="tf" type="static_transform_publisher" name="base_link_to_$(arg left_base)" args="0.06 0 0 0 0 0 base_link $(arg left_base) 100" />
+        <node pkg="tf" type="static_transform_publisher" name="base_link_to_$(arg right_base)" args="-0.06 0 0 0 0 0 base_link $(arg right_base) 100" />
+    </group>
+
+    <node pkg="tf" type="static_transform_publisher" name="$(arg right_base)_to_base_middle" args="0 0 0 0 0 0 $(arg right_base) base_middle 100" />
+    <node pkg="tf" type="static_transform_publisher" name="base_middle_to_top_middle" args="-0.04 0 0.04 0 -0.785398 0 base_middle top_middle 100" />
+    
+    <!-- base_middle -> base_footprint -->
+    <node pkg="tf" type="static_transform_publisher" name="base_footprint_to_base_link" args="0 0 1 1.57 0 0 base_footprint base_link 100" />
+
+    <!-- <node pkg="tf" type="static_transform_publisher" name="camera_middle_to_test_middle" args="0 0 0 -1.57 0 -1.57 camera_middle test_middle 100" /> -->
+
+    <!-- 发布机械臂tf坐标 -->
+    <node name="rm_arm_trans_node" pkg="tf_calculate" type="rm_arm_trans" output="screen" >
+        <param name="open_base" value="$(arg open_base)" type="string"/>
+        <param name="right_base_name" value="$(arg right_base)" type="string"/>
+        <param name="left_base_name" value="$(arg left_base)" type="string"/>
+        <param name="right_top_name" value="top_right" type="string"/>
+        <param name="left_top_name" value="top_left" type="string"/>
+        <param name="left_camera_name" value="camera_left" type="string"/>
+        <param name="right_camera_name" value="camera_right" type="string"/>
+        <param name="middle_camera_name" value="camera_middle" type="string"/>
+        <param name="middle_top_name" value="top_middle" type="string"/>
+    </node>
+    
+    <!-- 启动Rviz -->
+    <node name="rviz" pkg="rviz" type="rviz" args="-d $(find tf_calculate)/rviz/body_handling_demo.rviz" />
+</launch>

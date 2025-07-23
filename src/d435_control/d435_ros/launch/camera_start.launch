@@ -1,0 +1,7 @@
+<launch>
+    <node respawn="true" pkg="d435_ros" name="start_camera_middle" type="camera_service.py" output="screen">
+        <param name="resolution_width" type="int" value="640"/>
+        <param name="resolution_height" type="int" value="480"/>
+        <param name="frame_rate" type="int" value="30"/>
+    </node>
+</launch>

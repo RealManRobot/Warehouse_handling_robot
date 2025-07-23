@@ -1,0 +1,58 @@
+<?xml version="1.0"?>
+<launch>
+
+    <node pkg="body_handling_demo" type="body_handling_detect.py" name="body_handling_detect" output="screen" >
+        <!-- 物料框位置 -->
+        <param name="cargo_box_col" value="2" type="int"/>
+        <param name="cargo_box_row" value="2" type="int"/>
+        <param name="cargo_box_num" value="1" type="int"/>
+        
+        <!-- 物料的位置 -->
+        <rosparam param="cargoes_name">["JiaoHuanJi", "NSK", "AnNiu", "YiHeDa"]</rosparam>
+
+        <!-- <param name="cargo1" value="101" type="string"/>
+        <param name="cargo2" value="102" type="string"/>
+        <param name="cargo3" value="103" type="string"/>
+        <param name="cargo4" value="104" type="string"/> -->
+
+        <!-- 层数->升降机高度 -->
+        <param name="floor1" value="0.080" type="double"/>
+        <param name="floor2" value="0.555" type="double"/>
+        <param name="floor3" value="1.05" type="double"/>
+        <param name="floor4" value="0.999" type="double"/>
+
+        <!-- 固定位置->升降机高度 -->
+        <param name="lift_send" value="0.6" type="double"/>
+        <param name="lift_table" value="0.26" type="double"/>
+        
+        <!-- 工具坐标系名称 -->
+        <param name="left_tool1" value="grip_left" type="string"/>
+        <param name="left_tool2" value="nip_left" type="string"/>
+        <param name="left_tool3" value="tip_left" type="string"/>
+        <param name="right_tool1" value="grip_right" type="string"/>
+        <param name="right_tool2" value="nip_right" type="string"/>
+        <param name="right_tool3" value="tip_right" type="string"/>
+
+        <!-- 设置自动模式的持续时间 s-->
+        <param name="auto_mode_time" value="86400" type="int"/>
+
+        <!-- 设置手动模式的持续时间 s-->
+        <param name="manual_mode_time" value="86400" type="int"/>
+
+        <!-- 设置自主充电点位 -->
+        <rosparam param="charge_range">[30, 90]</rosparam>
+        <param name="charge_pose" value="120" type="string"/>
+
+        <!-- 设置头部舵机扭动角度 -->
+        <rosparam param="servo_motor">[360, 500]</rosparam>
+        <rosparam param="servo_tolerant">[3, 3]</rosparam> 
+
+        <!-- 是否进行语音播报 -->
+        <param name="talk_flag" value="true" type="bool"/>
+
+        <!-- 预设置左右臂位置数据 -->
+        <rosparam command="load" file="$(find body_handling_demo)/config/joints.yaml"/>
+        <rosparam command="load" file="$(find body_handling_demo)/config/poses.yaml"/>
+    </node>
+
+</launch>

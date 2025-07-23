@@ -1,0 +1,13 @@
+<?xml version="1.0"?>
+<launch>
+
+    <node pkg="cam_identify" type="cam_identify.py" name="cam_identify_node" output="screen" >
+        <param name="yolo_config" value="Body_Handly_Robot.pt" type="string"/>
+        <param name="solver_config" value="CDNet.pth" type="string"/>
+
+        <param name="tag" value="True" type="bool"/>
+        <param name="conf" value="0.15" type="double"/>
+        <param name="nc" value="1" type="int"/>
+    </node>
+
+</launch>

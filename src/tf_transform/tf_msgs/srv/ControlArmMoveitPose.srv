@@ -1,0 +1,5 @@
+# 
+int32 cmd  # 0: plan xyz wxyz; 1: only plan w x y z; 2: only plan x y z; 3: 与目标对齐
+geometry_msgs/Pose pose
+---
+bool state   #

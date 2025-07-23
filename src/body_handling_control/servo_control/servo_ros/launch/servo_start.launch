@@ -1,0 +1,3 @@
+<launch>
+    <node respawn="true" pkg="servo_ros" name="start_servo" type="servo_controller" output="screen"/>
+</launch>

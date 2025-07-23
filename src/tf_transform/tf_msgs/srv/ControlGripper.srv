@@ -1,0 +1,11 @@
+string cmd # get:获取状态;  open：开； close： 关
+int32 position	# 1~1000 用于开
+int32 speed
+int32 force  # speed force 用于关闭
+---
+bool state
+int16 actpos        #   夹爪开合度
+int16 enable        #   0 : 未使能; 1:使能
+int16 status        #   0:离线； 1：在线
+int16 mode          #   1:夹爪开到最大且空闲，2：夹爪闭合到最小且空闲；3：夹爪停止且空闲；4：夹爪正在闭合，5：夹爪正在张开；6：夹爪闭合过程中遇到阻力停止
+int16 current_force #   夹爪当前压力，单位g
